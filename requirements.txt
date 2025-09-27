@@ -2,4 +2,4 @@ streamlit
 requests
 pandas
 matplotlib
-streamlit run /mount/src/open-interest-tracker/app.py --server.fileWatcherType none
+streamlit run open-interest-tracker/app.py --server.fileWatcherType none
