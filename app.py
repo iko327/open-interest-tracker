@@ -2,9 +2,10 @@ import streamlit as st
 import requests
 import time
 import pandas as pd
-from datetime import datetime, timezone  # Added timezone
+from datetime import datetime, timezone
+import os
 
-# CSV file for persistent history
+# CSV file for history
 HISTORY_FILE = "solana_history.csv"
 
 # Session state for in-memory history
@@ -16,22 +17,28 @@ if 'update_count' not in st.session_state:
 # Load existing history from CSV if exists
 def load_history():
     if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
-        st.session_state.history = df.to_dict('records')
+        try:
+            df = pd.read_csv(HISTORY_FILE)
+            st.session_state.history = df.to_dict('records')
+        except:
+            st.session_state.history = []
     else:
         st.session_state.history = []
 
 # Save history to CSV
 def save_history(new_entry):
     st.session_state.history.append(new_entry)
-    df = pd.DataFrame(st.session_state.history)
-    df.to_csv(HISTORY_FILE, index=False)
+    try:
+        df = pd.DataFrame(st.session_state.history)
+        df.to_csv(HISTORY_FILE, index=False)
+    except Exception as e:
+        st.error(f"Error saving history: {e}")
 
 # Function to fetch data from APIs
 def fetch_oi_data():
     data = {}
     price = 0.0
-    timestamp = datetime.now(timezone.UTC).strftime("%Y-%m-%d %H:%M")  # Updated
+    timestamp = datetime.now(timezone.UTC).strftime("%Y-%m-%d %H:%M")
     
     # Fetch price from Binance
     try:
@@ -79,7 +86,7 @@ def fetch_oi_data():
     # Binance Long/Short Ratio (5m)
     try:
         ls_resp = requests.get("https://fapi.binance.com/fapi/v1/globalLongShortAccountRatio?symbol=SOLUSDT&period=5m", timeout=10).json()
-        ls_ratio = float(ls_resp[0]['longShortRatio'])  # Take latest
+        ls_ratio = float(ls_resp[0]['longShortRatio'])
         data['Long/Short Ratio'] = f"{ls_ratio:.2f}"
     except:
         data['Long/Short Ratio'] = "Error"
@@ -89,7 +96,7 @@ def fetch_oi_data():
         total_usd = sum(float(d['USD'][1:].replace(',', '')) for d in [data['Binance'], data['Bybit'], data['OKX']] if d['USD'] != "Error")
         total_sol = sum(float(d['SOL'].replace(',', '')) for d in [data['Binance'], data['Bybit'], data['OKX']] if d['SOL'] != "Error")
         data['Partial Total'] = {'USD': f"${total_usd:,.2f}", 'SOL': f"{total_sol:,.0f}"}
-        data['Partial Total USD Raw'] = total_usd  # For calculations
+        data['Partial Total USD Raw'] = total_usd
     except:
         data['Partial Total'] = {'USD': "Error", 'SOL': "Error"}
         data['Partial Total USD Raw'] = 0
@@ -102,7 +109,6 @@ def calculate_health(data):
     score = 0
     oi_usd = data['Partial Total USD Raw']
     
-    # For trend, compare to previous if available
     if st.session_state.history:
         prev_oi_usd = st.session_state.history[-1].get('Partial Total USD Raw', 0)
         if prev_oi_usd > 0:
@@ -110,7 +116,6 @@ def calculate_health(data):
             if change_pct > 5: score += 30
             elif change_pct > -5: score += 10
     
-    # Funding Rate (+30 max)
     try:
         funding = float(data['Funding Rate (%)'])
         if funding > 0.01: score += 30
@@ -118,7 +123,6 @@ def calculate_health(data):
     except:
         pass
     
-    # Long/Short Ratio (+40 max)
     try:
         ls = float(data['Long/Short Ratio'])
         if ls > 1.1: score += 40
@@ -149,7 +153,7 @@ load_history()
 
 # Streamlit app
 st.title("🧠 Solana Futures OI & Health Tracker (with History)")
-st.write("Live dashboard + historical analysis. Updates every 60s. Data logged to solana_history.csv.")
+st.write("Live dashboard + historical analysis. Updates every 60s. Data logged to solana_history.csv (downloadable).")
 
 tab1, tab2 = st.tabs(["Live Data", "History & Analysis"])
 
@@ -213,6 +217,15 @@ while True:
         if not history_df.empty:
             st.subheader("Historical Data")
             st.dataframe(history_df[['Timestamp', 'Partial Total USD', 'Funding Rate (%)', 'Long/Short Ratio', 'Health Score', 'Price']])
+            
+            # Download Button
+            csv = history_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download History CSV",
+                data=csv,
+                file_name="solana_history.csv",
+                mime="text/csv"
+            )
             
             st.subheader("Time Analysis Insights")
             st.text(analyze_history(history_df))
