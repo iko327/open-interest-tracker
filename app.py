@@ -2,9 +2,7 @@ import streamlit as st
 import requests
 import time
 import pandas as pd
-from datetime import datetime
-import os
-import matplotlib.pyplot as plt  # For charts, but we'll use Streamlit's built-in
+from datetime import datetime, timezone  # Added timezone
 
 # CSV file for persistent history
 HISTORY_FILE = "solana_history.csv"
@@ -29,11 +27,11 @@ def save_history(new_entry):
     df = pd.DataFrame(st.session_state.history)
     df.to_csv(HISTORY_FILE, index=False)
 
-# Function to fetch data from APIs (same as before)
+# Function to fetch data from APIs
 def fetch_oi_data():
     data = {}
     price = 0.0
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    timestamp = datetime.now(timezone.UTC).strftime("%Y-%m-%d %H:%M")  # Updated
     
     # Fetch price from Binance
     try:
@@ -99,7 +97,7 @@ def fetch_oi_data():
     data['Timestamp'] = timestamp
     return data, price
 
-# Function to calculate health score (same as before)
+# Function to calculate health score
 def calculate_health(data):
     score = 0
     oi_usd = data['Partial Total USD Raw']
@@ -111,7 +109,6 @@ def calculate_health(data):
             change_pct = (oi_usd - prev_oi_usd) / prev_oi_usd * 100
             if change_pct > 5: score += 30
             elif change_pct > -5: score += 10
-            # else 0
     
     # Funding Rate (+30 max)
     try:
@@ -168,7 +165,7 @@ while True:
     health_score = calculate_health(data)
     data['Health Score'] = health_score
     
-    # Save to history (extract raw values for analysis)
+    # Save to history
     new_entry = {
         'Timestamp': data['Timestamp'],
         'Partial Total USD': data['Partial Total']['USD'],
@@ -210,7 +207,7 @@ while True:
         st.subheader("Long/Short Ratio")
         st.write(data.get('Long/Short Ratio', 'N/A'))
     
-    # History Tab (updates on rerun)
+    # History Tab
     with tab2:
         history_df = pd.DataFrame(st.session_state.history)
         if not history_df.empty:
@@ -221,13 +218,9 @@ while True:
             st.text(analyze_history(history_df))
             
             st.subheader("Charts Over Time")
-            # OI Chart
             st.line_chart(history_df.set_index('Timestamp')['Partial Total USD Raw'], y_label="Partial OI (USD)")
-            # Health Score Chart
             st.line_chart(history_df.set_index('Timestamp')['Health Score'], y_label="Health Score")
-            # Funding Rate Chart
             st.line_chart(history_df.set_index('Timestamp')['Funding Rate (%)'], y_label="Funding Rate (%)")
-            # LS Ratio Chart
             st.line_chart(history_df.set_index('Timestamp')['Long/Short Ratio'], y_label="LS Ratio")
         else:
             st.write("No history yet—wait for a few updates.")
